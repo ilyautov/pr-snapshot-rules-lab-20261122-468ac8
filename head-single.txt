@@ -1,1 +1,2 @@
 Single-commit head control.
+Second harmless head revision after local verification.
