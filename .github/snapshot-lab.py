@@ -35,7 +35,7 @@ def read(path):
         raise SystemExit(f'GitHub read failed: {path}, {status}')
     return json.loads(body)
 
-def attest(case):
+def attest(case, subject='merge'):
     number, head, base, commit = (case[k] for k in ('number', 'head', 'base', 'merge'))
     if case['base_ref'] != 'target':
         raise SystemExit('attestation is limited to the approved target')
@@ -50,12 +50,17 @@ def attest(case):
             and observed_merge == commit and parents == [base, head]
             and diff_code == 200 and hashlib.sha256(diff).hexdigest() == case['diff']):
         raise SystemExit('attested snapshot drifted')
-    code, body = api(f'statuses/{commit}', 'POST', {'state': 'success', 'context': CONTEXT,
+    if subject == 'head':
+        head_parents = [parent['sha'] for parent in read(f'git/commits/{head}')['parents']]
+        if head_parents != [base]:
+            raise SystemExit('reviewed head must be a single commit directly on the verified base')
+    status_commit = commit if subject == 'merge' else head
+    code, body = api(f'statuses/{status_commit}', 'POST', {'state': 'success', 'context': CONTEXT,
         'description': 'Verified synthetic snapshot of head and base'})
     parsed = json.loads(body)
     if not (code == 201 and parsed['state'] == 'success' and parsed['context'] == CONTEXT):
         raise SystemExit(f'App attestation failed: {code}')
-    row = {'action': 'attest', 'case': case['name'], 'pr': number, 'sha': commit,
+    row = {'action': 'attest', 'case': case['name'], 'pr': number, 'sha': status_commit, 'subject': subject,
            'creator': parsed['creator']['login'], 'http': code}
     print('LAB_RESULT ' + json.dumps(row), flush=True)
 
@@ -73,10 +78,13 @@ def request(case):
 cases = json.loads(os.environ['LAB_CASES'])
 assert isinstance(cases, list) and 1 <= len(cases) <= 4
 mode = sys.argv[1]
-assert mode in ('attest', 'request')
+assert mode in ('attest', 'attest-head', 'request')
 for case in cases:
     assert type(case['number']) is int and 1 <= case['number'] <= 20
     assert isinstance(case['name'], str) and case['name'] in ('head', 'retarget', 'base', 'positive')
     assert all(SHA.fullmatch(case[key]) for key in ('head', 'base', 'merge'))
     assert DIGEST.fullmatch(case['diff'])
-    (attest if mode == 'attest' else request)(case)
+    if mode == 'request':
+        request(case)
+    else:
+        attest(case, 'head' if mode == 'attest-head' else 'merge')

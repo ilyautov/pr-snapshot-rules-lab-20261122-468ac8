@@ -6,7 +6,7 @@ on:
         description: Select the check or merge job
         required: true
         type: choice
-        options: [attest, request]
+        options: [attest, attest-head, request]
       cases:
         description: Synthetic fixture snapshots
         required: true
@@ -14,7 +14,7 @@ on:
 permissions: {}
 jobs:
   attest:
-    if: github.ref == 'refs/heads/main' && inputs.action == 'attest'
+    if: github.ref == 'refs/heads/main' && (inputs.action == 'attest' || inputs.action == 'attest-head')
     runs-on: ubuntu-latest
     timeout-minutes: 4
     permissions:
@@ -30,7 +30,8 @@ jobs:
         env:
           GH_APP_TOKEN: ${{ github.token }}
           LAB_CASES: ${{ inputs.cases }}
-        run: python3 .github/snapshot-lab.py attest
+          LAB_ACTION: ${{ inputs.action }}
+        run: python3 .github/snapshot-lab.py "$LAB_ACTION"
   request:
     if: github.ref == 'refs/heads/main' && inputs.action == 'request'
     runs-on: ubuntu-latest
